@@ -6,22 +6,18 @@ This cartridge consists of source code repositories and jenkins jobs for a sampl
 
 ## Source code repositories
 
-Cartridge loads the source code repositories
+Cartridge loads the source code repositories 
 
 * [Tomcat8 Dockerfile](https://github.com/Accenture/adop-cartridge-docker-reference/)
 
 ## Jenkins Jobs
 
-This cartridge generates the jenkins jobs and pipeline views to -
+This cartridge generates the jenkins jobs to -
 
 * Performs static code analysis using Dockerlint on the Dockerfile in the Git repository.
 * Builds the Dockerfile in the repository.
 * Performs a vulnerability scan on the built image using Clair [Requires Clair Platform Extension](https://github.com/kramos/adop-platform-extension-clair)
-* Image testing by analysing the outputs from docker inspect against a known configuration file.
-* Container testing by creating a new testing image internally.
 * Pushes the built and scanned image to a registry.
-* Pull the built image from the registry and deploy it as a container.
-* Manual step allowing you to clean up the deployed containers.
 
 **Note** : The credential parameter used in the jenkins job expects the docker hub credentials to be added to jenkins with ID **docker-credentials**.
 
