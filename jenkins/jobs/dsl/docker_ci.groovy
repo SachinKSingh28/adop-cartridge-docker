@@ -1,8 +1,14 @@
-// Variables
+import pluggable.scm.*
+
+SCMProvider scmProvider = SCMProviderHandler.getScmProvider("${SCM_PROVIDER_ID}", binding.variables)
+
+//Folders
 def workspaceFolderName = "${WORKSPACE_NAME}"
 def projectFolderName = "${PROJECT_NAME}"
+def projectScmNamespace = "${SCM_NAMESPACE}"
+
+// Variables
 def dockerfileGitRepo = "adop-cartridge-docker-reference"
-def dockerfileGitUrl = "ssh://jenkins@gerrit:29418/${PROJECT_NAME}/" + dockerfileGitRepo
 
 // Jobs
 def dockerci = freeStyleJob(projectFolderName + "/Docker_CI")
@@ -16,8 +22,8 @@ dockerci.with {
             defaultValue('docker-credentials')
             description('Dockerhub username and password. Please make sure the credentials are added with ID "docker-credentials"')
         }
-        stringParam("IMAGE_REPO",dockerfileGitUrl,"Repository location of your Dockerfile")
-        stringParam("IMAGE_TAG",'tomcat8',"Enter a unique string to tag your images (Note: Upper case chararacters are not allowed)")
+        stringParam("SCM_REPO",dockerfileGitRepo,"Repository location of your Dockerfile")
+        stringParam("IMAGE_TAG",'tomcat8',"Enter a string to tag your images (Note: Upper case characters are not allowed) e.g. johnsmith/dockerimage:tagnumber for dockerhub or if pushing to aws aws_account_id.dkr.ecr.region.amazonaws.com/my-web-app")
         stringParam("CLAIR_DB",'',"URI for the Clair PostgreSQL database in the format postgresql://postgres:password@postgres:5432?sslmode=disable (ignore parameter as it is currently unsupported)")
     }
     wrappers {
@@ -30,31 +36,13 @@ dockerci.with {
             usernamePassword("DOCKERHUB_USERNAME", "DOCKERHUB_PASSWORD", '${DOCKER_LOGIN}')
         }
     }
-    scm {
-        git {
-            remote {
-                url('${IMAGE_REPO}')
-                credentials("pluggable-scm")
-            }
-            branch("*/master")
-        }
-    }
+    scm scmProvider.get(projectScmNamespace, '${SCM_REPO}', "*/master", "adop-jenkins-master", null)
     environmentVariables {
         env('WORKSPACE_NAME',workspaceFolderName)
         env('PROJECT_NAME',projectFolderName)
     }
     label("docker")
-    triggers {
-        gerrit {
-            events {
-                refUpdated()
-            }
-            project(projectFolderName + '/' + dockerfileGitRepo, 'plain:master')
-            configure { node ->
-                node / serverName("ADOP Gerrit")
-            }
-        }
-    }
+    triggers scmProvider.trigger(projectScmNamespace, '${SCM_REPO}', "master")
     steps {
         shell('''set +x
             |echo "Pull the Dockerfile out of Git, ready for us to test and if successful, release via the pipeline."
@@ -78,7 +66,7 @@ dockerci.with {
             |fi'''.stripMargin())
 
         shell('''echo "Building the docker image locally..."
-            |docker build -t ${DOCKERHUB_USERNAME}/${IMAGE_TAG}:${BUILD_NUMBER} ${WORKSPACE}/.'''.stripMargin())
+            |docker build -t ${IMAGE_TAG} ${WORKSPACE}/.'''.stripMargin())
 
         shell('''echo "THIS STEP NEEDS TO BE UPDATED ONCE ACCESS TO A PRODUCTION CLAIR DATABASE IS AVAILABLE"
             |
@@ -96,7 +84,16 @@ dockerci.with {
             |fi'''.stripMargin())
 
         shell('''echo "DOCKER PUSH"
-            |docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_PASSWORD} -e devops@adop.com
-            |docker push ${DOCKERHUB_USERNAME}/${IMAGE_TAG}:${BUILD_NUMBER}'''.stripMargin())
+            |if [[ ${IMAGE_TAG} == *"amazonaws.com"* ]]; then
+            | export AWS_ACCESS_KEY_ID=${DOCKERHUB_USERNAME}
+            | export AWS_SECRET_ACCESS_KEY=${DOCKERHUB_PASSWORD}
+            | export AWS_DEFAULT_REGION="${IMAGE_TAG#*.*.*.}"
+            | export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION%%.*}"
+            | ECR_DOCKER_LOGIN=`aws ecr get-login`
+            | ${ECR_DOCKER_LOGIN}
+            |else
+            | docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_PASSWORD} -e devops@adop.com
+            |fi
+            docker push ${IMAGE_TAG}'''.stripMargin())
     }
 }

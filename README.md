@@ -6,7 +6,7 @@ This cartridge consists of source code repositories and jenkins jobs for a sampl
 
 ## Source code repositories
 
-Cartridge loads the source code repositories 
+Cartridge loads the source code repositories
 
 * [Tomcat8 Dockerfile](https://github.com/Accenture/adop-cartridge-docker-reference/)
 
