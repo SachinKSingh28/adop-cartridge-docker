@@ -1,1 +1,1 @@
-https://github.com/IrmantasM/adop-cartridge-docker-reference.git
+https://github.com/Accenture/adop-cartridge-docker-reference.git
