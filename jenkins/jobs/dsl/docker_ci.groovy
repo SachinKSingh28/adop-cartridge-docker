@@ -43,35 +43,47 @@ dockerci.with {
     label("docker")
     triggers scmProvider.trigger(projectScmNamespace, '${SCM_REPO}', "master")
     steps {
-        shell('''set +x
+        shell('''#!/bin/bash
+            |set +x
             |echo "Pull the Dockerfile out of Git, ready for us to test and if successful, release via the pipeline."
             |
             |# Convert tag name to lowercase letters if any uppercase letters are present since they are not allowed by Docker
-            |echo TAG=$(echo "$IMAGE_TAG" | awk '{print tolower($0)}')'''.stripMargin())
-
-        shell('''echo "Run dockerlint test on Dockerfile: https://github.com/RedCoolBeans/dockerlint"
+            |echo TAG=$(echo "$IMAGE_TAG" | awk '{print tolower($0)}') > image.properties
+            |
+            |# Rename dockerfile so that we can build other containers to run the lint/bdd on this source dockerfile
+            |mv Dockerfile Dockerfile.source'''.stripMargin())
+        
+        environmentVariables {
+            propertiesFile('image.properties')
+        }
+        shell('''#!/bin/bash
+            |echo "Run dockerlint test on Dockerfile: https://github.com/RedCoolBeans/dockerlint"
             |MASTER_NAME=$(echo ${JENKINS_URL} | awk -F/ '{print $3}')
             |# Docker test wrapper image Dockerfile definition
             |mkdir -p tmp
-            |rm -rf tmp/Dockerfile
-            |echo 'FROM redcoolbeans/dockerlint:0.2.0 \\n' \\
-            |'ADD Dockerfile /Dockerfile \\n' \\
-            |'ENTRYPOINT ["dockerlint"]' \\
-            |>> tmp/Dockerfile
+            |echo '
+            |FROM redcoolbeans/dockerlint:0.2.0
+            |COPY Dockerfile.source /Dockerfile
+            |'> tmp/Dockerfile.lintwrapper
+            |
+            |# Temporary docker file to build lint
+            |cp tmp/Dockerfile.lintwrapper Dockerfile
+            |
+            |random=$(date +"%s")
             |
             |# Remove Debris If Any
-            |if [[ "$(docker images -q ${MASTER_NAME} 2> /dev/null)" == "" ]]; then
-            |  docker rmi -f "${MASTER_NAME}"
-            |fi
+            |#if [[ "$(docker images -q ${MASTER_NAME} 2> /dev/null)" != "" ]]; then
+            |#  docker rmi -f "${MASTER_NAME}"
+            |#fi
             |
             |# Create test wrapper image: dockerlint as a base, add Dockerfile on top
-            |docker build -t "${MASTER_NAME}" ${WORKSPACE}/tmp
+            |docker build -t "${MASTER_NAME}-${random}" .
             |
             |# Run Linting
-            |docker run --rm "${MASTER_NAME}" > "${WORKSPACE}/${JOB_NAME##*/}.out"
+            |docker run --rm "${MASTER_NAME}-${random}" > "${WORKSPACE}/${JOB_NAME##*/}.out"
             |
             |# Clean-up
-            |docker rmi -f "${MASTER_NAME}"
+            |docker rmi -f "${MASTER_NAME}-${random}"
             |
             |if ! grep "Dockerfile is OK" ${WORKSPACE}/${JOB_NAME##*/}.out ; then
             | echo "Dockerfile does not satisfy Dockerlint static code analysis"
@@ -81,10 +93,12 @@ dockerci.with {
             | cat ${WORKSPACE}/${JOB_NAME##*/}.out
             |fi'''.stripMargin())
 
-        shell('''echo "Building the docker image locally..."
-            |docker build -t ${IMAGE_TAG} ${WORKSPACE}/.'''.stripMargin())
+        shell('''#!/bin/bash
+            |echo "Building the docker image locally..."
+            |docker build --no-cache -t ${TAG}:${BUILD_NUMBER} - < Dockerfile.source'''.stripMargin())
 
-        shell('''echo "[INFO] TEST: Clair Testing Step"
+        shell('''#!/bin/bash
+            |echo "[INFO] TEST: Clair Testing Step"
             |echo "THIS STEP NEEDS TO BE UPDATED ONCE ACCESS TO A PRODUCTION CLAIR DATABASE IS AVAILABLE"
             |
             |if [ -z ${CLAIR_DB} ]; then
@@ -100,42 +114,82 @@ dockerci.with {
             | # INSERT STEPS HERE TO RUN VULNERABILITY ANALYSIS ON IMAGE USING CLAIR API
             |fi'''.stripMargin())
 
-        shell('''echo "[INFO] TEST: BDD Testing Step"
+        shell('''#!/bin/bash
+            |echo "[INFO] TEST: BDD Testing Step"
             |MASTER_NAME=$(echo ${JENKINS_URL} | awk -F/ '{print $3}')
             |# Docker Test Wrapper Image
             |mkdir -p tmp
-            |rm -rf tmp/Dockerfile
-            |echo 'FROM luismsousa/docker-security-test \\n' \\
-            |'ADD Dockerfile /dockerdir/Dockerfile \\n' \\
-            |'ENTRYPOINT ["rake"]' \\
-            |>> tmp/Dockerfile
+            |echo '
+            |FROM luismsousa/docker-security-test
+            |COPY Dockerfile.source /dockerdir/Dockerfile
+            |'> tmp/Dockerfile.bddwrapper
+            |
+            |# Temporary docker file to build lint
+            |cp tmp/Dockerfile.bddwrapper Dockerfile
+            |
+            |random=$(date +"%s")
             |
             |# Remove Debris If Any
-            |if [[ "$(docker images -q ${MASTER_NAME} 2> /dev/null)" == "" ]]; then
-            |  docker rmi -f "${MASTER_NAME}"
-            |fi
+            |#if [[ "$(docker images -q ${MASTER_NAME} 2> /dev/null)" != "" ]]; then
+            |#  docker rmi -f "${MASTER_NAME}-${random}"
+            |#fi
             |
             |# Create test wrapper image: security test as a base, add Dockerfile on top
-            |docker build -t "${MASTER_NAME}" ${WORKSPACE}/tmp
+            |docker build -t "${MASTER_NAME}-${random}" .
             |
             |# Run Security Test
-            |docker run --rm -v "/var/run/docker.sock:/var/run/docker.sock" "${MASTER_NAME}" > "${WORKSPACE}/cucumber.out"
+            |set +e
+            |docker run --rm -v "/var/run/docker.sock:/var/run/docker.sock" "${MASTER_NAME}-${random}" rake CUCUMBER_OPTS='features --format json --guess -o /dev/stdout' > "${WORKSPACE}/cucumber.json"
+            |set -e
             |
             |# Clean-up
-            |docker rmi -f "${MASTER_NAME}"
+            |docker rmi -f "${MASTER_NAME}-${random}"
+            |docker rm -f $(docker ps -a -q --filter 'name=container-to-delete')
             |'''.stripMargin())
 
-        shell('''echo "Pushing docker image to container registry"
-            |if [[ ${IMAGE_TAG} == *"amazonaws.com"* ]]; then
+        shell('''#!/bin/bash
+            |set +x
+            |echo "Pushing docker image to container registry"
+            |if [[ "${TAG}" == *"amazonaws.com"* ]]; then
             | export AWS_ACCESS_KEY_ID=${DOCKERHUB_USERNAME}
             | export AWS_SECRET_ACCESS_KEY=${DOCKERHUB_PASSWORD}
-            | export AWS_DEFAULT_REGION="${IMAGE_TAG#*.*.*.}"
+            | export AWS_DEFAULT_REGION="${TAG#*.*.*.}"
             | export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION%%.*}"
-            | ECR_DOCKER_LOGIN=`aws ecr get-login`
+            | set +e
+            | aws --version || (curl "https://s3.amazonaws.com/aws-cli/awscli-bundle.zip" -o "awscli-bundle.zip" && \\
+            | 	unzip awscli-bundle.zip && \\
+            |    ./awscli-bundle/install -b ./aws \\
+            | 	)
+            | set -e
+            | ECR_DOCKER_LOGIN=`./aws ecr get-login`
             | ${ECR_DOCKER_LOGIN}
+            |elif [[ $(grep -o "/" <<< "$TAG" | wc -l) -eq 2 ]]; then
+            | export DOCKERHUB_URL=${TAG%%/*}
+            | docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_PASSWORD} ${DOCKERHUB_URL}
             |else
-            | docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_PASSWORD} -e devops@adop.com
+            | docker login -u ${DOCKERHUB_USERNAME} -p ${DOCKERHUB_PASSWORD}
             |fi
-            docker push ${IMAGE_TAG}'''.stripMargin())
+            |set -x
+            |
+            |# Push image to repository
+            |docker push ${TAG}:${BUILD_NUMBER}
+            |
+            |# Clean up
+            |docker rmi ${TAG}:${BUILD_NUMBER}'''.stripMargin())
+        configure { myProject ->
+            myProject / 'publishers' << 'net.masterthought.jenkins.CucumberReportPublisher'(plugin: 'cucumber-reports@0.1.0') {
+               jsonReportDirectory("")
+               pluginUrlPath("")
+               fileIncludePattern("cucumber.json")
+               fileExcludePattern("")
+               skippedFails("false")
+               pendingFails("false")
+               undefinedFails("false")
+               missingFails("false")
+               noFlashCharts("false")
+               ignoreFailedTests("false")
+               parallelTesting("false")
+           }
+        }
     }
 }
