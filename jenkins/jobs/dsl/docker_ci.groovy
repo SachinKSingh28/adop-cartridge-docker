@@ -14,7 +14,7 @@ def dockerfileGitRepo = "adop-cartridge-docker-reference"
 def dockerci = freeStyleJob(projectFolderName + "/Docker_CI")
 
 dockerci.with {
-    description("Description")
+    description("This job runs all the steps to build and push a docker image. It also runs static code analysis, security tests and some bdd tests on the dockerfile and docker image.")
     parameters {
         credentialsParam("DOCKER_LOGIN") {
             type('com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl')
@@ -25,6 +25,10 @@ dockerci.with {
         stringParam("SCM_REPO",dockerfileGitRepo,"Repository location of your Dockerfile")
         stringParam("IMAGE_TAG",'tomcat8',"Enter a string to tag your images (Note: Upper case characters are not allowed) e.g. johnsmith/dockerimage:tagnumber for dockerhub or if pushing to aws aws_account_id.dkr.ecr.region.amazonaws.com/my-web-app")
         stringParam("CLAIR_DB",'',"URI for the Clair PostgreSQL database in the format postgresql://postgres:password@postgres:5432?sslmode=disable (ignore parameter as it is currently unsupported)")
+    }
+    logRotator {
+    	artifactNumToKeep(5)
+	numToKeep(10)
     }
     wrappers {
         preBuildCleanup()
@@ -70,20 +74,21 @@ dockerci.with {
             |cp tmp/Dockerfile.lintwrapper Dockerfile
             |
             |random=$(date +"%s")
+	    |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
             |
             |# Remove Debris If Any
-            |#if [[ "$(docker images -q ${MASTER_NAME} 2> /dev/null)" != "" ]]; then
-            |#  docker rmi -f "${MASTER_NAME}"
-            |#fi
+            |if [[ "$(docker images | grep ${Wrapper_Image_Tag} | awk '{print $3}')" != "" ]]; then
+            |  docker rmi -f $(docker images | grep ${Wrapper_Image_Tag} | awk '{print $3}')
+            |fi
             |
             |# Create test wrapper image: dockerlint as a base, add Dockerfile on top
-            |docker build -t "${MASTER_NAME}-${random}" .
+            |docker build -t "${Wrapper_Image_Tag}-${random}" .
             |
             |# Run Linting
-            |docker run --rm "${MASTER_NAME}-${random}" > "${WORKSPACE}/${JOB_NAME##*/}.out"
+            |docker run --rm "${Wrapper_Image_Tag}-${random}" > "${WORKSPACE}/${JOB_NAME##*/}.out"
             |
             |# Clean-up
-            |docker rmi -f "${MASTER_NAME}-${random}"
+            |docker rmi -f "${Wrapper_Image_Tag}-${random}"
             |
             |if ! grep "Dockerfile is OK" ${WORKSPACE}/${JOB_NAME##*/}.out ; then
             | echo "Dockerfile does not satisfy Dockerlint static code analysis"
@@ -118,33 +123,39 @@ dockerci.with {
             |echo "[INFO] TEST: BDD Testing Step"
             |MASTER_NAME=$(echo ${JENKINS_URL} | awk -F/ '{print $3}')
             |# Docker Test Wrapper Image
+	    |# TODO : Use versioned image for luismsousa/docker-security-test
             |mkdir -p tmp
             |echo '
             |FROM luismsousa/docker-security-test
             |COPY Dockerfile.source /dockerdir/Dockerfile
             |'> tmp/Dockerfile.bddwrapper
+	    |if [[ -d "tests/container-test/features" ]]; then
+	    |  echo "RUN rm -rf /dockerdir/features" >> tmp/Dockerfile.bddwrapper
+	    |  echo "COPY tests/container-test/features /dockerdir/features" >> tmp/Dockerfile.bddwrapper
+	    |fi
             |
-            |# Temporary docker file to build lint
+            |# Temporary docker file to build bdd wrapper container
             |cp tmp/Dockerfile.bddwrapper Dockerfile
             |
             |random=$(date +"%s")
+	    |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
             |
             |# Remove Debris If Any
-            |#if [[ "$(docker images -q ${MASTER_NAME} 2> /dev/null)" != "" ]]; then
-            |#  docker rmi -f "${MASTER_NAME}-${random}"
-            |#fi
+            |if [[ "$(docker images | grep ${Wrapper_Image_Tag} | awk '{print $3}')" != "" ]]; then
+            |  docker rmi -f $(docker images | grep ${Wrapper_Image_Tag} | awk '{print $3}')
+            |fi
             |
             |# Create test wrapper image: security test as a base, add Dockerfile on top
-            |docker build -t "${MASTER_NAME}-${random}" .
+            |docker build -t "${Wrapper_Image_Tag}-${random}" .
             |
             |# Run Security Test
             |set +e
-            |docker run --rm -v "/var/run/docker.sock:/var/run/docker.sock" "${MASTER_NAME}-${random}" rake CUCUMBER_OPTS='features --format json --guess -o /dev/stdout' > "${WORKSPACE}/cucumber.json"
-            |set -e
+            |docker run --rm -v "/var/run/docker.sock:/var/run/docker.sock" "${Wrapper_Image_Tag}-${random}" rake CUCUMBER_OPTS='features --format json --guess -o /dev/stdout' > "${WORKSPACE}/cucumber.json"
             |
             |# Clean-up
-            |docker rmi -f "${MASTER_NAME}-${random}"
+            |docker rmi -f "${Wrapper_Image_Tag}-${random}"
             |docker rm -f $(docker ps -a -q --filter 'name=container-to-delete')
+	    |set -e
             |'''.stripMargin())
 
         shell('''#!/bin/bash
