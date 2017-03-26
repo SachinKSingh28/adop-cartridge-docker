@@ -18,8 +18,9 @@ This cartridge generates the jenkins jobs to -
 * Builds the Dockerfile in the repository.
 * Performs a vulnerability scan on the built image using Clair [Requires Clair Platform Extension](https://github.com/kramos/adop-platform-extension-clair)
 * Pushes the built and scanned image to a registry.
+  * Supports ECR, DTR and public docker hub.
 
-**Note** : The credential parameter used in the jenkins job expects the docker hub credentials to be added to jenkins with ID **docker-credentials**.
+**Note** : The credential parameter used in the jenkins job expects the docker hub credentials to be added to jenkins with ID **docker-credentials**. For DTR and public docker-credentials is supposed to be username and password whereas if you are using ECR then username is expected to be AWS\_ACCESS\_KEY\_ID and password is expected to be AWS\_SECRET\_ACCESS\_KEY.
 
 # License
 Please view [license information](LICENSE.md) for the software contained on this image.
