@@ -123,13 +123,18 @@ dockerci.with {
             |echo "[INFO] TEST: BDD Testing Step"
             |MASTER_NAME=$(echo ${JENKINS_URL} | awk -F/ '{print $3}')
             |# Docker Test Wrapper Image
+	    |# TODO : Use versioned image for luismsousa/docker-security-test
             |mkdir -p tmp
             |echo '
             |FROM luismsousa/docker-security-test
             |COPY Dockerfile.source /dockerdir/Dockerfile
             |'> tmp/Dockerfile.bddwrapper
+	    |if [[ -d "tests/container-tests/features" ]]; then
+	    |  echo "RUN rm -rf /dockerdir/features" >> tmp/Dockerfile.bddwrapper
+	    |  echo "COPY tests/container-tests/features /dockerdir/features" >> tmp/Dockerfile.bddwrapper
+	    |fi
             |
-            |# Temporary docker file to build lint
+            |# Temporary docker file to build bdd wrapper container
             |cp tmp/Dockerfile.bddwrapper Dockerfile
             |
             |random=$(date +"%s")
