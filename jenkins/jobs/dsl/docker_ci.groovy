@@ -129,9 +129,9 @@ dockerci.with {
             |FROM luismsousa/docker-security-test
             |COPY Dockerfile.source /dockerdir/Dockerfile
             |'> tmp/Dockerfile.bddwrapper
-	    |if [[ -d "tests/container-tests/features" ]]; then
+	    |if [[ -d "tests/container-test/features" ]]; then
 	    |  echo "RUN rm -rf /dockerdir/features" >> tmp/Dockerfile.bddwrapper
-	    |  echo "COPY tests/container-tests/features /dockerdir/features" >> tmp/Dockerfile.bddwrapper
+	    |  echo "COPY tests/container-test/features /dockerdir/features" >> tmp/Dockerfile.bddwrapper
 	    |fi
             |
             |# Temporary docker file to build bdd wrapper container
@@ -151,11 +151,11 @@ dockerci.with {
             |# Run Security Test
             |set +e
             |docker run --rm -v "/var/run/docker.sock:/var/run/docker.sock" "${Wrapper_Image_Tag}-${random}" rake CUCUMBER_OPTS='features --format json --guess -o /dev/stdout' > "${WORKSPACE}/cucumber.json"
-            |set -e
             |
             |# Clean-up
             |docker rmi -f "${Wrapper_Image_Tag}-${random}"
             |docker rm -f $(docker ps -a -q --filter 'name=container-to-delete')
+	    |set -e
             |'''.stripMargin())
 
         shell('''#!/bin/bash
