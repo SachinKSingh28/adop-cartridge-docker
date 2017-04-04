@@ -47,7 +47,7 @@ dockerci.with {
     label("docker")
     triggers scmProvider.trigger(projectScmNamespace, '${SCM_REPO}', "master")
     steps {
-        shell('''#!/bin/bash
+        shell('''#!/bin/bash -xe
             |set +x
             |echo "Pull the Dockerfile out of Git, ready for us to test and if successful, release via the pipeline."
             |
@@ -60,7 +60,7 @@ dockerci.with {
         environmentVariables {
             propertiesFile('image.properties')
         }
-        shell('''#!/bin/bash
+        shell('''#!/bin/bash -xe
             |echo "Run dockerlint test on Dockerfile: https://github.com/RedCoolBeans/dockerlint"
             |MASTER_NAME=$(echo ${JENKINS_URL} | awk -F/ '{print $3}')
             |# Docker test wrapper image Dockerfile definition
@@ -74,7 +74,7 @@ dockerci.with {
             |cp tmp/Dockerfile.lintwrapper Dockerfile
             |
             |random=$(date +"%s")
-	    |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
+	        |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
             |
             |# Remove Debris If Any
             |if [[ "$(docker images | grep ${Wrapper_Image_Tag} | awk '{print $3}')" != "" ]]; then
@@ -98,11 +98,11 @@ dockerci.with {
             | cat ${WORKSPACE}/${JOB_NAME##*/}.out
             |fi'''.stripMargin())
 
-        shell('''#!/bin/bash
+        shell('''#!/bin/bash -xe
             |echo "Building the docker image locally..."
             |docker build --no-cache -t ${TAG}:${BUILD_NUMBER} - < Dockerfile.source'''.stripMargin())
 
-        shell('''#!/bin/bash
+        shell('''#!/bin/bash -xe
             |echo "[INFO] TEST: Clair Testing Step"
             |echo "THIS STEP NEEDS TO BE UPDATED ONCE ACCESS TO A PRODUCTION CLAIR DATABASE IS AVAILABLE"
             |
@@ -119,26 +119,26 @@ dockerci.with {
             | # INSERT STEPS HERE TO RUN VULNERABILITY ANALYSIS ON IMAGE USING CLAIR API
             |fi'''.stripMargin())
 
-        shell('''#!/bin/bash
+        shell('''#!/bin/bash -xe
             |echo "[INFO] TEST: BDD Testing Step"
             |MASTER_NAME=$(echo ${JENKINS_URL} | awk -F/ '{print $3}')
             |# Docker Test Wrapper Image
-	    |# TODO : Use versioned image for luismsousa/docker-security-test
+	        |# TODO : Use versioned image for luismsousa/docker-security-test
             |mkdir -p tmp
             |echo '
             |FROM luismsousa/docker-security-test
             |COPY Dockerfile.source /dockerdir/Dockerfile
             |'> tmp/Dockerfile.bddwrapper
-	    |if [[ -d "tests/container-test/features" ]]; then
-	    |  echo "RUN rm -rf /dockerdir/features" >> tmp/Dockerfile.bddwrapper
-	    |  echo "COPY tests/container-test/features /dockerdir/features" >> tmp/Dockerfile.bddwrapper
-	    |fi
+	        |if [[ -d "tests/container-test/features" ]]; then
+	        |  echo "RUN rm -rf /dockerdir/features" >> tmp/Dockerfile.bddwrapper
+	        |  echo "COPY tests/container-test/features /dockerdir/features" >> tmp/Dockerfile.bddwrapper
+	        |fi
             |
             |# Temporary docker file to build bdd wrapper container
             |cp tmp/Dockerfile.bddwrapper Dockerfile
             |
             |random=$(date +"%s")
-	    |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
+	        |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
             |
             |# Remove Debris If Any
             |if [[ "$(docker images | grep ${Wrapper_Image_Tag} | awk '{print $3}')" != "" ]]; then
@@ -155,10 +155,10 @@ dockerci.with {
             |# Clean-up
             |docker rmi -f "${Wrapper_Image_Tag}-${random}"
             |docker rm -f $(docker ps -a -q --filter 'name=container-to-delete')
-	    |set -e
+	        |set -e
             |'''.stripMargin())
 
-        shell('''#!/bin/bash
+        shell('''#!/bin/bash -e
             |set +x
             |echo "Pushing docker image to container registry"
             |if [[ "${TAG}" == *"amazonaws.com"* ]]; then
