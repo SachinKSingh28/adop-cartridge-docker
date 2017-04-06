@@ -23,7 +23,7 @@ dockerci.with {
             description('Dockerhub username and password. Please make sure the credentials are added with ID "docker-credentials"')
         }
         stringParam("SCM_REPO",dockerfileGitRepo,"Repository location of your Dockerfile")
-        stringParam("IMAGE_TAG",'tomcat8',"Enter a string to tag your images (Note: Upper case characters are not allowed) e.g. johnsmith/dockerimage:tagnumber for dockerhub or if pushing to aws aws_account_id.dkr.ecr.region.amazonaws.com/my-web-app")
+        stringParam("IMAGE_TAG",'tomcat8',"Enter a string to tag your images (Note: Upper case characters are not allowed) e.g. johnsmith/dockerimage for hub.docker.com, if pushing to aws aws_account_id.dkr.ecr.region.amazonaws.com/my-web-app, if pushing to DTR then dtr.example.com/username/dockerimage")
         stringParam("CLAIR_DB",'',"URI for the Clair PostgreSQL database in the format postgresql://postgres:password@postgres:5432?sslmode=disable (ignore parameter as it is currently unsupported)")
     }
     logRotator {
