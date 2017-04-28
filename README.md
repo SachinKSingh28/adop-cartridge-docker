@@ -16,7 +16,7 @@ This cartridge generates the jenkins jobs to -
 
 * Performs static code analysis using Dockerlint on the Dockerfile in the Git repository.
 * Builds the Dockerfile in the repository.
-* Performs a vulnerability scan on the built image using Clair [Requires Clair Platform Extension](https://github.com/kramos/adop-platform-extension-clair)
+* Performs a vulnerability scan on the built image using Anchore Container Scanner plugin.
 * Pushes the built and scanned image to a registry.
   * Supports ECR, DTR and public docker hub.
 
