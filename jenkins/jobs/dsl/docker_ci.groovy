@@ -172,7 +172,7 @@ dockerci.with {
             |    ./awscli-bundle/install -b ./aws \\
             | 	)
             | set -e
-            | ECR_DOCKER_LOGIN=`./aws ecr get-login`
+            | ECR_DOCKER_LOGIN=`aws ecr get-login`
             | ${ECR_DOCKER_LOGIN}
             |elif [[ $(grep -o "/" <<< "$TAG" | wc -l) -eq 2 ]]; then
             | export DOCKERHUB_URL=${TAG%%/*}
