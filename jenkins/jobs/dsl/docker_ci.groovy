@@ -99,7 +99,7 @@ dockerci.with {
 
         shell('''#!/bin/bash -xe
             |echo "Building the docker image locally..."
-            |docker build --no-cache -t ${TAG}:${BUILD_NUMBER} - < Dockerfile.source'''.stripMargin())
+            |docker build --no-cache -t ${TAG}:${BUILD_NUMBER} -f Dockerfile.source .'''.stripMargin())
 
         shell('''#!/bin/bash -xe
             |echo "[INFO] TEST: Anchore Testing Step"
@@ -137,7 +137,6 @@ dockerci.with {
                 }
             }
         }
-
         shell('''#!/bin/bash -xe
             |echo "[INFO] TEST: BDD Testing Step"
             |MASTER_NAME=$(echo ${JENKINS_URL} | awk -F/ '{print $3}')
