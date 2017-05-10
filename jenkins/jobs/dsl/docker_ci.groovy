@@ -24,11 +24,10 @@ dockerci.with {
         }
         stringParam("SCM_REPO",dockerfileGitRepo,"Repository location of your Dockerfile")
         stringParam("IMAGE_TAG",'tomcat8',"Enter a string to tag your images (Note: Upper case characters are not allowed) e.g. johnsmith/dockerimage for hub.docker.com, if pushing to aws aws_account_id.dkr.ecr.region.amazonaws.com/my-web-app, if pushing to DTR then dtr.example.com/username/dockerimage")
-        stringParam("CLAIR_DB",'',"URI for the Clair PostgreSQL database in the format postgresql://postgres:password@postgres:5432?sslmode=disable (ignore parameter as it is currently unsupported)")
     }
     logRotator {
-    	artifactNumToKeep(5)
-	numToKeep(10)
+        artifactNumToKeep(5)
+    numToKeep(10)
     }
     wrappers {
         preBuildCleanup()
@@ -74,7 +73,7 @@ dockerci.with {
             |cp tmp/Dockerfile.lintwrapper Dockerfile
             |
             |random=$(date +"%s")
-	        |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
+            |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
             |
             |# Remove Debris If Any
             |if [[ "$(docker images | grep ${Wrapper_Image_Tag} | awk '{print $3}')" != "" ]]; then
@@ -100,45 +99,64 @@ dockerci.with {
 
         shell('''#!/bin/bash -xe
             |echo "Building the docker image locally..."
-            |docker build --no-cache -t ${TAG}:${BUILD_NUMBER} - < Dockerfile.source'''.stripMargin())
+            |docker build --no-cache -t ${TAG}:${BUILD_NUMBER} -f Dockerfile.source .'''.stripMargin())
 
         shell('''#!/bin/bash -xe
-            |echo "[INFO] TEST: Clair Testing Step"
-            |echo "THIS STEP NEEDS TO BE UPDATED ONCE ACCESS TO A PRODUCTION CLAIR DATABASE IS AVAILABLE"
+            |echo "[INFO] TEST: Anchore Testing Step"
+            |echo "This job tests the image with an Anchore Container Scanning plugin."
             |
-            |if [ -z ${CLAIR_DB} ]; then
-            | echo "WARNING: You have not provided the endpoints for a Clair database, moving on for now..."
-            |else
-            | # Set up Clair as a docker container
-            | echo "Clair database endpoint: ${CLAIR_DB}"
-            | mkdir /tmp/clair_config
-            | curl -L https://raw.githubusercontent.com/coreos/clair/master/config.example.yaml -o /tmp/clair_config/config.yaml
-            | # Add the URI for your postgres database
-            | sed -i'' -e "s|options: |options: ${CLAIR_DB}|g" /tmp/clair_config/config.yaml
-            | docker run -d -p 6060-6061:6060-6061 -v /tmp/clair_config:/config quay.io/coreos/clair -config=/config/config.yaml
-            | # INSERT STEPS HERE TO RUN VULNERABILITY ANALYSIS ON IMAGE USING CLAIR API
-            |fi'''.stripMargin())
+            |docker pull anchore/jenkins:latest
+            |echo "${TAG}:${BUILD_NUMBER} ${WORKSPACE}/Dockerfile" > anchore_images
+            |'''.stripMargin())
 
+        anchore {
+            name('anchore_images')
+            policyName('anchore_policy')
+            globalWhiteList('anchore_global_whitelist')
+            userScripts('anchore_user_scripts')
+
+            bailOnFail(true)
+            bailOnWarn(false)
+            bailOnPluginFail(true)
+            doCleanup(false)
+
+            queriesBlock {
+                inputQueries {
+                  anchoreQuery {
+                    query('list-packages all')
+                  }
+                  anchoreQuery {
+                    query('list-files all')
+                  }
+                  anchoreQuery {
+                    query('cve-scan all')
+                  }
+                  anchoreQuery {
+                    query('show-pkg-diffs base')
+                  }
+                }
+            }
+        }
         shell('''#!/bin/bash -xe
             |echo "[INFO] TEST: BDD Testing Step"
             |MASTER_NAME=$(echo ${JENKINS_URL} | awk -F/ '{print $3}')
             |# Docker Test Wrapper Image
-	        |# TODO : Use versioned image for luismsousa/docker-security-test
+            |# TODO : Use versioned image for luismsousa/docker-security-test
             |mkdir -p tmp
             |echo '
             |FROM luismsousa/docker-security-test
             |COPY Dockerfile.source /dockerdir/Dockerfile
             |'> tmp/Dockerfile.bddwrapper
-	        |if [[ -d "tests/container-test/features" ]]; then
-	        |  echo "RUN rm -rf /dockerdir/features" >> tmp/Dockerfile.bddwrapper
-	        |  echo "COPY tests/container-test/features /dockerdir/features" >> tmp/Dockerfile.bddwrapper
-	        |fi
+            |if [[ -d "tests/container-test/features" ]]; then
+            |  echo "RUN rm -rf /dockerdir/features" >> tmp/Dockerfile.bddwrapper
+            |  echo "COPY tests/container-test/features /dockerdir/features" >> tmp/Dockerfile.bddwrapper
+            |fi
             |
             |# Temporary docker file to build bdd wrapper container
             |cp tmp/Dockerfile.bddwrapper Dockerfile
             |
             |random=$(date +"%s")
-	        |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
+            |Wrapper_Image_Tag=$(echo "${MASTER_NAME}-${WORKSPACE_NAME}-${PROJECT_NAME}" | awk '{print tolower($0)}')
             |
             |# Remove Debris If Any
             |if [[ "$(docker images | grep ${Wrapper_Image_Tag} | awk '{print $3}')" != "" ]]; then
@@ -155,7 +173,7 @@ dockerci.with {
             |# Clean-up
             |docker rmi -f "${Wrapper_Image_Tag}-${random}"
             |docker rm -f $(docker ps -a -q --filter 'name=container-to-delete')
-	        |set -e
+            |set -e
             |'''.stripMargin())
 
         shell('''#!/bin/bash -e
@@ -168,11 +186,11 @@ dockerci.with {
             | export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION%%.*}"
             | set +e
             | aws --version || (curl "https://s3.amazonaws.com/aws-cli/awscli-bundle.zip" -o "awscli-bundle.zip" && \\
-            | 	unzip awscli-bundle.zip && \\
+            |   unzip awscli-bundle.zip && \\
             |    ./awscli-bundle/install -b ./aws \\
-            | 	)
+            |   )
             | set -e
-            | ECR_DOCKER_LOGIN=`./aws ecr get-login`
+            | ECR_DOCKER_LOGIN=`aws ecr get-login`
             | ${ECR_DOCKER_LOGIN}
             |elif [[ $(grep -o "/" <<< "$TAG" | wc -l) -eq 2 ]]; then
             | export DOCKERHUB_URL=${TAG%%/*}
